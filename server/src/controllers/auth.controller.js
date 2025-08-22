@@ -32,12 +32,14 @@ export const signup = async (req, res) => {
                 name: newUser.name,
                 email: newUser.email,
                 profilePicture: newUser.profilePicture,
+                createdAt: newUser.createdAt,
+                updatedAt: newUser.updatedAt
             });        
-                }else{
-                    res.status(400).json({ message: "User creation failed" });
-                }
+        } else {
+            res.status(400).json({ message: "User creation failed" });
+        }
 
-    }catch (error) {
+    } catch (error) {
         console.log(error); // <-- Add this line
         console.log("error in signup controller:", error.message);
         res.status(500).json({ message: "Internal server error" });
@@ -68,6 +70,8 @@ export const login = async (req, res) => {
             name: user.name,
             email: user.email,
             profilePicture: user.profilePicture,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt
         });
     } catch (error) {
         console.log(error); // Log full error
@@ -92,7 +96,6 @@ export const logout = (req, res) => {
     }
 };
 
-
 export const updateProfile = async (req, res) => {
     try {
         const { profilePicture } = req.body;
@@ -106,20 +109,66 @@ export const updateProfile = async (req, res) => {
             return res.status(400).json({ message: "Profile picture is required" });
         }
 
-        // Upload to Cloudinary (add options if needed)
-        const uploadResponse = await cloudinary.uploader.upload(profilePicture);
+        // Add logging to debug
+        console.log("Uploading profile picture to Cloudinary...");
+        
+        // Set upload options to optimize for profile pictures
+        const uploadOptions = {
+            folder: "profile_pictures",
+            transformation: [
+                { width: 400, height: 400, crop: "fill" },
+                { quality: "auto" }
+            ],
+            resource_type: "image"
+        };
+
+        // Upload to Cloudinary with optimized settings
+        const uploadResponse = await cloudinary.uploader.upload(
+            profilePicture,
+            uploadOptions
+        );
+        
+        console.log("Cloudinary upload successful:", uploadResponse.secure_url);
 
         // Update user profile picture
-        const updateUser = await User.findByIdAndUpdate(
+        const updatedUser = await User.findByIdAndUpdate(
             userId,
-            { profilePicture: uploadResponse.secure_url },
+            { 
+                profilePicture: uploadResponse.secure_url,
+                updatedAt: new Date()
+            },
             { new: true }
-        );
+        ).select('-password'); // Exclude password from response
 
-        res.status(200).json(updateUser);
+        if (!updatedUser) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        console.log("User updated successfully:", {
+            id: updatedUser._id,
+            profilePicture: updatedUser.profilePicture
+        });
+
+        // Return the complete user object
+        res.status(200).json({
+            _id: updatedUser._id,
+            name: updatedUser.name,
+            email: updatedUser.email,
+            profilePicture: updatedUser.profilePicture,
+            createdAt: updatedUser.createdAt,
+            updatedAt: updatedUser.updatedAt
+        });
     } catch (error) {
-        console.log(error);
-        console.log("error in updateProfile controller:", error.message);
+        console.log("Full error in updateProfile:", error);
+        console.log("Error message in updateProfile:", error.message);
+        
+        // Check for Cloudinary-specific errors
+        if (error.http_code) {
+            return res.status(error.http_code).json({ 
+                message: "Image upload failed: " + error.message 
+            });
+        }
+        
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -135,4 +184,3 @@ export const checkAuth = (req, res) => {
         res.status(500).json({ message: "Internal server error" });
     }
 };
-
